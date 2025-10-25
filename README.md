@@ -126,26 +126,38 @@ The diagram below shows how the GPIO pins are connected to the 16 interrupt line
 
 ## STM 32 CUBE PROGRAM :
 ```
+/* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stdio.h"
 #include "stdbool.h"
 
-bool IRSENSOR;
-void IRPAIR();
+/* Global Variables ---------------------------------------------------------*/
+bool IRSENSOR_STATE = 1;
+bool current_IR_state;
 
-/* Redirect printf to UART */
+/* Function Prototypes ------------------------------------------------------*/
+void IRPAIR(void);
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART2_UART_Init(void);
+
+/* UART Handle --------------------------------------------------------------*/
+UART_HandleTypeDef huart2;
+
+/* Redirect printf to UART --------------------------------------------------*/
 #if defined(_ICCARM) || defined(_ARMCC_VERSION)
 #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
 #elif defined(__GNUC__)
 #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
 #endif
 
-UART_HandleTypeDef huart2;
+PUTCHAR_PROTOTYPE
+{
+  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
 
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
-
+/* Main --------------------------------------------------------------------*/
 int main(void)
 {
   HAL_Init();
@@ -158,40 +170,67 @@ int main(void)
   while (1)
   {
     IRPAIR();
+    HAL_Delay(200); // adjust delay for smoother/less spammy output
   }
 }
 
-void IRPAIR()
+/* IR Sensor Continuous Check Function --------------------------------------*/
+void IRPAIR(void)
 {
-  IRSENSOR = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
-  if (IRSENSOR == 0)
+  current_IR_state = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4);
+
+  if (current_IR_state == GPIO_PIN_RESET)
   {
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
-    printf("Obstacle Detected\n");
-    HAL_Delay(1000);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
-    printf("Obstacle not Detected\n");
-    HAL_Delay(1000);
+    printf("OBSTACLE DETECTED\n");
   }
-}
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-  if (GPIO_Pin == GPIO_PIN_4)
+  else
   {
-    if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_4) == GPIO_PIN_SET)
-    {
-      printf("INTERRUPT GENERATED\n");
-    }
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
+    printf("OBSTACLE NOT DETECTED\n");
   }
 }
 
-PUTCHAR_PROTOTYPE
+/* USART2 Initialization ---------------------------------------------------*/
+static void MX_USART2_UART_Init(void)
 {
-  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
-  return ch;
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
+/* GPIO Initialization -----------------------------------------------------*/
+static void MX_GPIO_Init(void)
+{
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* PB4 - IR Sensor Input */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* PB5 - LED Output */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+
+/* System Clock Configuration ---------------------------------------------*/
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -210,9 +249,9 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK3 | RCC_CLOCKTYPE_HCLK
-                              | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1
-                              | RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK3 | RCC_CLOCKTYPE_HCLK |
+                                RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 |
+                                RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
@@ -225,39 +264,7 @@ void SystemClock_Config(void)
   }
 }
 
-static void MX_USART2_UART_Init(void)
-{
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
-
-static void MX_GPIO_Init(void)
-{
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-  /* PB4 as external interrupt */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
-}
-
+/* Error Handler -----------------------------------------------------------*/
 void Error_Handler(void)
 {
   __disable_irq();
@@ -265,19 +272,11 @@ void Error_Handler(void)
   {
   }
 }
-
-#ifdef USE_FULL_ASSERT
-void assert_failed(uint8_t *file, uint32_t line)
-{
-  printf("Wrong parameters value: file %s on line %lu\r\n", file, line);
-}
-#endif
-
 ```
 
 ## Output screen shots of serial port utility   :
  
-![WhatsApp Image 2025-09-20 at 2 35 20 PM](https://github.com/user-attachments/assets/2cc163bb-f316-471a-8367-a757398d1dc9)
+<img width="1919" height="1196" alt="Screenshot 2025-10-25 092321" src="https://github.com/user-attachments/assets/aa3450fc-629d-4854-aad4-60b733eb150f" />
 
  
  ## Circuit board :
