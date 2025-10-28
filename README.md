@@ -140,6 +140,7 @@ void IRPAIR(void);
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+void Error_Handler(void);
 
 /* UART Handle --------------------------------------------------------------*/
 UART_HandleTypeDef huart2;
@@ -170,7 +171,7 @@ int main(void)
   while (1)
   {
     IRPAIR();
-    HAL_Delay(200); // adjust delay for smoother/less spammy output
+    HAL_Delay(200); // Adjust delay for stable serial output
   }
 }
 
@@ -184,7 +185,7 @@ void IRPAIR(void)
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
     printf("OBSTACLE DETECTED\n");
   }
-  else
+  else if (current_IR_state == GPIO_PIN_SET)
   {
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
     printf("OBSTACLE NOT DETECTED\n");
@@ -272,6 +273,7 @@ void Error_Handler(void)
   {
   }
 }
+
 ```
 
 ## Output screen shots of serial port utility   :
